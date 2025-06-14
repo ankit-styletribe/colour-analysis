@@ -10,6 +10,7 @@ from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 from datetime import datetime
 from dotenv import load_dotenv
+from face_landmarker import analyze_image_colors
 
 load_dotenv()
 
@@ -62,14 +63,17 @@ class FaceColorExtractor:
             print(f"Face Region: {x, y, w, h}")
             cv2.imwrite('face_region.jpg', face_region)
 
-        # Extract skin color
+        # Extract skin, eye and hair color
         skin_color = self._extract_skin_color(face_region)
-
-        # Extract eye color
         eye_color = self._extract_eye_color(image_rgb, faces[0])
-
-        # Extract hair color (using the upper part of the face)
         hair_color = self._extract_hair_color(image_rgb, y)
+
+        # Update skin and eye color using mediapipe
+        data = analyze_image_colors(image_rgb)['data']
+        skin_color = data['skin_color_rgb']
+        #eye_color = (data['left_iris_color_rgb'] + data['right_iris_color_rgb'])/2
+        eye_color = data['left_iris_color_rgb'] 
+
 
         rgb_colors = {
             'skin_color': skin_color,
@@ -150,6 +154,70 @@ class FaceColorExtractor:
         # Get average color
         hair_color = cv2.mean(hair_region)[:3]
         return tuple(map(int, hair_color))
+
+    def visualize_regions(self, image, face_region, eye_color, x, y, w, h):
+        """Visualize the detected skin, hair, and eye regions"""
+        plt.figure(figsize=(10, 8))
+
+        # Show the original image
+        plt.subplot(2, 2, 1)
+        plt.imshow(image)
+        plt.title("Original Image")
+        plt.axis('off')
+
+        # Show the face region
+        plt.subplot(2, 2, 2)
+        plt.imshow(face_region)
+        plt.title("Face Region")
+        plt.axis('off')
+
+        # Draw rectangles around detected eyes
+        roi_gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        eyes = self.eye_cascade.detectMultiScale(roi_gray)
+        for (ex, ey, ew, eh) in eyes:
+            ex = ex+int(ew/4)
+            ey = ey+int(eh/4)
+            ew = int(ew/2)
+            eh = int(eh/2)
+            cv2.rectangle(image, (ex, ey), (ex + ew, ey + eh), (255, 255, 0), 2)
+            cv2.rectangle(image, (ex+int(ew/4), ey+int(eh/4)), (ex + int(3/4*ew), ey + int(3/4*eh)), (255, 0, 0), 2)
+
+        # Show the image with detected eyes
+        plt.subplot(2, 2, 3)
+        plt.imshow(image)
+        plt.title("Detected Eyes")
+        plt.axis('off')
+
+        # Show the hair region (upper part of the face)
+        hair_region = image[0:y, :]
+        plt.subplot(2, 2, 4)
+        plt.imshow(hair_region)
+        plt.title("Hair Region")
+        plt.axis('off')
+
+        plt.tight_layout()
+        plt.show()
+
+    # Display dominant skin colors
+    def visualize_colors(self,colors):
+        plt.figure(figsize=(8, 2))
+
+        plt.subplot(1, 3, 1)
+        plt.axis('off')
+        plt.imshow([[colors['skin_color']]])
+        plt.title(f'Color - Skin {1}')
+
+        plt.subplot(1, 3, 2)
+        plt.axis('off')
+        plt.imshow([[colors['eye_color']]])
+        plt.title(f'Color - Eye {2}')
+
+        plt.subplot(1, 3, 3)
+        plt.axis('off')
+        plt.imshow([[colors['hair_color']]])
+        plt.title(f'Color - Hair {3}')
+
+        plt.show()
 
     def rgb_to_lab(self, rgb):
         """Convert RGB to CIELAB"""
@@ -392,4 +460,4 @@ def health_check():
 extractor = FaceColorExtractor()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=True)
