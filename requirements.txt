@@ -1,0 +1,9 @@
+boto3==1.38.36
+Flask==3.1.1
+matplotlib==3.10.3
+numpy==2.3.0
+opencv_python==4.11.0.86
+python-dotenv==1.1.0
+Requests==2.32.4
+skimage==0.0
+Werkzeug==3.1.3
