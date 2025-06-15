@@ -10,7 +10,7 @@ from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 from datetime import datetime
 from dotenv import load_dotenv
-from face_landmarker import analyze_image_colors
+from face_landmarker import analyze_image_colors, get_hair_color
 
 load_dotenv()
 
@@ -63,16 +63,20 @@ class FaceColorExtractor:
             print(f"Face Region: {x, y, w, h}")
             cv2.imwrite('face_region.jpg', face_region)
 
-        # Extract skin, eye and hair color
-        skin_color = self._extract_skin_color(face_region)
-        eye_color = self._extract_eye_color(image_rgb, faces[0])
-        hair_color = self._extract_hair_color(image_rgb, y)
+        # # Extract skin, eye and hair color
+        # skin_color = self._extract_skin_color(face_region)
+        # eye_color = self._extract_eye_color(image_rgb, faces[0])
+        # hair_color = self._extract_hair_color(image_rgb, y)
 
-        # Update skin and eye color using mediapipe
+        # Get skin and eye color using mediapipe
         data = analyze_image_colors(image_rgb)['data']
         skin_color = data['skin_color_rgb']
         #eye_color = (data['left_iris_color_rgb'] + data['right_iris_color_rgb'])/2
         eye_color = data['left_iris_color_rgb'] 
+
+        # Update skin and eye color using mediapipe
+        data = get_hair_color(image_rgb)['data']
+        hair_color = data['hair_color_rgb']
 
 
         rgb_colors = {

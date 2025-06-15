@@ -11,6 +11,7 @@ from flask import Flask, request, jsonify
 # --------------------- Setup --------------
 
 MODEL_PATH = 'face_landmarker_v2_with_blendshapes.task'
+HAIR_MODEL_PATH = 'hair_segmenter.tflite'
 image_path = 'face_samples/dangi.jpg'
 
 visualize_color_analysis = 0 # set as 1 if need to visualise the color analysis
@@ -24,9 +25,11 @@ LANDMARK_INDICES = {
 
 # Initialize MediaPipe solutions.
 BaseOptions = mp.tasks.BaseOptions
+VisionRunningMode = mp.tasks.vision.RunningMode
+
+# Create a face_landmarker instance with the face_landmarker model:
 FaceLandmarker = mp.tasks.vision.FaceLandmarker
 FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
-VisionRunningMode = mp.tasks.vision.RunningMode
 
 try:
     options = FaceLandmarkerOptions(
@@ -36,6 +39,19 @@ try:
     )
     landmarker = FaceLandmarker.create_from_options(options)
     print("FaceLandmarker initialized successfully with detection confidence at 0.3.")
+except Exception as e:
+    raise RuntimeError(f"Failed to initialize FaceLandmarker. Error: {e}")
+
+# Create a image segmenter instance with the hair segmentation model:
+ImageSegmenter = mp.tasks.vision.ImageSegmenter
+ImageSegmenterOptions = mp.tasks.vision.ImageSegmenterOptions
+
+try:
+    options = ImageSegmenterOptions(
+        base_options=BaseOptions(model_asset_path=HAIR_MODEL_PATH),
+        running_mode=VisionRunningMode.IMAGE,
+        output_category_mask=True)
+    segmenter = ImageSegmenter.create_from_options(options)
 except Exception as e:
     raise RuntimeError(f"Failed to initialize FaceLandmarker. Error: {e}")
 
@@ -188,17 +204,43 @@ def analyze_image_colors(image_np):
         return {'status': 'error', 'message': f'An unexpected error occurred: {str(e)}'}
 
 
+def get_hair_color(image_np):
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_np)
+    segmentation_result = segmenter.segment(mp_image)
+
+    mask = segmentation_result.category_mask.numpy_view()  # Shape: [H, W]
+
+    # Hair class ID — check your model’s documentation, often it's 1 or 2
+    HAIR_CLASS_ID = 1
+
+    hair_mask = (mask == HAIR_CLASS_ID).astype(np.uint8)  # Binary mask for hair
+    hair_mask_3ch = np.stack([hair_mask]*3, axis=-1)
+
+    hair_region = (image_np * hair_mask_3ch).astype(np.uint8)
+    # Save the result
+    #cv2.imwrite("hair_only.png", hair_region)
+
+    non_black_pixels = hair_region[np.any(hair_region != [0, 0, 0], axis=-1)]
+    if non_black_pixels.size == 0:
+        return {'status': 'error', 'message': 'No hair pixels found'}
+
+    avg_color = np.mean(non_black_pixels, axis=0)
+    avg_color_rgb = tuple(int(c) for c in avg_color)
+
+    return {'status': 'success', 'data': {'hair_color_rgb': avg_color_rgb}}
 
 if __name__ == "__main__":
     #image = mp.Image.create_from_file(image_path)
     image = cv2.imread(image_path)
+    image = cv2.resize(image, (512, 512))
     
     # Run Analysis on Image
-    result = analyze_image_colors(image)
-    print(result)
-    # if result['status'] == 'error':
-    #     print(jsonify(result), 500)
-    # print(jsonify(result))
+    skin_eye_result = analyze_image_colors(image)
+    print(skin_eye_result)
+
+    hair_result = get_hair_color(image)
+    print(hair_result)
+    
 
 
     #---------------------- Face Landmarker Visualization -------------------------
